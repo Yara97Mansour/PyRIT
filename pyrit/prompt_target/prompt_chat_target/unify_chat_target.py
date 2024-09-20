@@ -1,1 +1,128 @@
+# Copyright (c) UnifyAI
+# Licensed under the MIT license.
 
+import json
+import logging
+from typing import Optional
+
+from unify import Unify, AsyncUnify, MultiLLM, MultiLLMAsync
+
+from pyrit.common import default_values
+from pyrit.exceptions import EmptyResponseException, PyritException
+from pyrit.exceptions import pyrit_target_retry, handle_bad_request_exception
+from pyrit.memory import MemoryInterface
+from pyrit.models import ChatMessage, PromptRequestPiece, PromptRequestResponse
+from pyrit.models import construct_response_from_request
+from pyrit.prompt_target import PromptChatTarget, limit_requests_per_minute
+
+logger = logging.getLogger(__name__)
+
+
+class UnifyChatTarget(PromptChatTarget):
+
+    _top_p: float
+    _deployment_name: str
+    _temperature: float
+    _frequency_penalty: float
+    _presence_penalty: float
+    _client: Unify
+    _async_client: AsyncUnify
+    _Multi_client: MultiLLM
+    _Multi_async_client: MultiLLMAsync
+	
+    API_KEY_ENVIRONMENT_VARIABLE: str = "UNIFY_CHAT_KEY"
+    DEPLOYMENT_ENVIRONMENT_VARIABLE: str = "UNIFY_CHAT_DEPLOYMENT"
+
+	
+    def __init__(
+        self,
+        *,
+        deployment_name: Optional[Union[str,Iterable[str]]] = None,
+        api_key: str = None,
+        memory: MemoryInterface = None,
+        max_tokens: int = 1024,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        frequency_penalty: float = 0.5,
+        presence_penalty: float = 0.5,
+        headers: Optional[dict[str, str]] = None,
+        max_requests_per_minute: Optional[int] = None,
+    ) -> None:
+        """
+        Class that initializes an openai chat target
+
+        Args:
+            deployment_name (str, optional): The name of the deployment. Defaults to the
+                DEPLOYMENT_ENVIRONMENT_VARIABLE environment variable.
+            api_key (str, optional): The API key for accessing the Unify service.
+                Defaults to the API_KEY_ENVIRONMENT_VARIABLE environment variable.
+            memory (MemoryInterface, optional): An instance of the MemoryInterface class
+                for storing conversation history. Defaults to None.
+            max_tokens (int, optional): The maximum number of tokens to generate in the response.
+                Defaults to 1024.
+            temperature (float, optional): The temperature parameter for controlling the
+                randomness of the response. Defaults to 1.0.
+            top_p (float, optional): The top-p parameter for controlling the diversity of the
+                response. Defaults to 1.0.
+            frequency_penalty (float, optional): The frequency penalty parameter for penalizing
+                frequently generated tokens. Defaults to 0.5.
+            presence_penalty (float, optional): The presence penalty parameter for penalizing
+                tokens that are already present in the conversation history. Defaults to 0.5.
+            max_requests_per_minute (int, optional): Number of requests the target can handle per
+                minute before hitting a rate limit. The number of requests sent to the target
+                will be capped at the value provided.
+        """
+        PromptChatTarget.__init__(self, memory=memory, max_requests_per_minute=max_requests_per_minute)
+
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        self._top_p = top_p
+        self._frequency_penalty = frequency_penalty
+        self._presence_penalty = presence_penalty
+
+        self._deployment_name = default_values.get_required_value(
+            env_var_name=self.DEPLOYMENT_ENVIRONMENT_VARIABLE, passed_value=deployment_name
+        )
+        api_key = default_values.get_required_value(
+            env_var_name=self.API_KEY_ENVIRONMENT_VARIABLE, passed_value=api_key
+        )
+        self._client = Unify(
+            endpoint=self._deployment_name,
+            frequency_penalty=self._frequency_penalty,
+            max_completion_tokens=self._max_tokens,
+            presence_penalty=self._presence_penalty,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            api_key=api_key,
+            extra_headers=json.loads(str(headers)),
+            )
+        self._async_client = AsyncUnify(
+            endpoint=self._deployment_name,
+            frequency_penalty=self._frequency_penalty,
+            max_completion_tokens=self._max_tokens,
+            presence_penalty=self._presence_penalty,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            api_key=api_key,
+            extra_headers=json.loads(str(headers)),
+            )
+        self._Multi_client = MultiLLM(
+            endpoints=self._deployment_name,
+            frequency_penalty=self._frequency_penalty,
+            max_completion_tokens=self._max_tokens,
+            presence_penalty=self._presence_penalty,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            api_key=api_key,
+            extra_headers=json.loads(str(headers)),
+            )
+        self._Multi_async_client = MultiLLMAsync(
+            endpoints=self._deployment_name,
+            frequency_penalty=self._frequency_penalty,
+            max_completion_tokens=self._max_tokens,
+            presence_penalty=self._presence_penalty,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            api_key=api_key,
+            extra_headers=json.loads(str(headers)),
+            )
