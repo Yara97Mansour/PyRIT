@@ -118,9 +118,9 @@ class UnifyChatTarget(PromptChatTarget):
 
         logger.info(f"Sending the following prompt to the prompt target: {request}")
 		
-		resp_text = await self._complete_chat_async(messages=messages)
+        resp_text = await self._complete_chat_async(messages=messages)
 
-        if not resp:
+        if not resp_text:
             raise ValueError("The chat returned an empty response.")
 
         logger.info(f'Received the following response from the prompt target "{resp_text}"')
@@ -176,7 +176,7 @@ class UnifyChatTarget(PromptChatTarget):
             messages=[{"role": msg.role, "content": msg.content} for msg in messages],
         )
 		
-	return response
+        return response
 
     def _validate_request(self, *, prompt_request: PromptRequestResponse) -> None:
         if len(prompt_request.request_pieces) != 1:
