@@ -3,7 +3,7 @@
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Union, List, Dict, Iterable
 
 from unify import Unify, AsyncUnify, MultiLLM, MultiLLMAsync
 
@@ -45,7 +45,7 @@ class UnifyChatTarget(PromptChatTarget):
         top_p: float = 1.0,
         frequency_penalty: float = 0.5,
         presence_penalty: float = 0.5,
-        headers: Optional[dict[str, str]] = None,
+        headers: Optional[Dict[str, str]] = None,
         max_requests_per_minute: Optional[int] = None,
     ) -> None:
         """
@@ -131,7 +131,7 @@ class UnifyChatTarget(PromptChatTarget):
     @pyrit_target_retry
     async def _complete_chat_async(
         self,
-        messages: list[ChatMessage],
+        messages: List[ChatMessage],
         max_tokens: int = 1024,
         temperature: float = 1.0,
         top_p: float = 1.0,
@@ -144,7 +144,7 @@ class UnifyChatTarget(PromptChatTarget):
         Sends a chat message to the OpenAI chat model and retrieves the generated response.
 
         Args:
-            messages (list[ChatMessage]): The chat message objects containing the role and content.
+            messages (List[ChatMessage]): The chat message objects containing the role and content.
             max_tokens (int, optional): The maximum number of tokens to generate.
                 Defaults to 1024.
             temperature (float, optional): Controls randomness in the response generation.
