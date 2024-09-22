@@ -8,8 +8,8 @@ from typing import Optional
 from unify import Unify, AsyncUnify, MultiLLM, MultiLLMAsync
 
 from pyrit.common import default_values
-from pyrit.exceptions import EmptyResponseException, PyritException
-from pyrit.exceptions import pyrit_target_retry, handle_bad_request_exception
+# from pyrit.exceptions import EmptyResponseException, PyritException
+from pyrit.exceptions import pyrit_target_retry # , handle_bad_request_exception
 from pyrit.memory import MemoryInterface
 from pyrit.models import ChatMessage, PromptRequestPiece, PromptRequestResponse
 from pyrit.models import construct_response_from_request
@@ -88,41 +88,100 @@ class UnifyChatTarget(PromptChatTarget):
         )
         self._client = Unify(
             endpoint=self._deployment_name,
-            frequency_penalty=self._frequency_penalty,
-            max_completion_tokens=self._max_tokens,
-            presence_penalty=self._presence_penalty,
-            temperature=self._temperature,
-            top_p=self._top_p,
-            api_key=api_key,
+	    api_key=api_key,
             extra_headers=json.loads(str(headers)),
-            )
+        )
         self._async_client = AsyncUnify(
             endpoint=self._deployment_name,
-            frequency_penalty=self._frequency_penalty,
-            max_completion_tokens=self._max_tokens,
-            presence_penalty=self._presence_penalty,
-            temperature=self._temperature,
-            top_p=self._top_p,
             api_key=api_key,
             extra_headers=json.loads(str(headers)),
-            )
+        )
         self._Multi_client = MultiLLM(
             endpoints=self._deployment_name,
-            frequency_penalty=self._frequency_penalty,
-            max_completion_tokens=self._max_tokens,
-            presence_penalty=self._presence_penalty,
-            temperature=self._temperature,
-            top_p=self._top_p,
             api_key=api_key,
             extra_headers=json.loads(str(headers)),
-            )
+        )
         self._Multi_async_client = MultiLLMAsync(
             endpoints=self._deployment_name,
-            frequency_penalty=self._frequency_penalty,
-            max_completion_tokens=self._max_tokens,
-            presence_penalty=self._presence_penalty,
-            temperature=self._temperature,
-            top_p=self._top_p,
             api_key=api_key,
             extra_headers=json.loads(str(headers)),
-            )
+        )
+
+
+    @limit_requests_per_minute
+    async def send_prompt_async(self, *, prompt_request: PromptRequestResponse) -> PromptRequestResponse:
+        self._validate_request(prompt_request=prompt_request)
+        request: PromptRequestPiece = prompt_request.request_pieces[0]
+
+        messages = self._memory.get_chat_messages_with_conversation_id(conversation_id=request.conversation_id)
+        messages.append(request.to_chat_message())
+
+        logger.info(f"Sending the following prompt to the prompt target: {request}")
+		
+		resp_text = await self._complete_chat_async(messages=messages)
+
+        if not resp:
+            raise ValueError("The chat returned an empty response.")
+
+        logger.info(f'Received the following response from the prompt target "{resp_text}"')
+        response_entry = construct_response_from_request(request=request, response_text_pieces=[resp_text])
+
+        return response_entry
+
+    @pyrit_target_retry
+    async def _complete_chat_async(
+        self,
+        messages: list[ChatMessage],
+        max_tokens: int = 1024,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        frequency_penalty: float = 0.5,
+        presence_penalty: float = 0.5,
+        ) -> str:
+        """
+        Completes asynchronous chat request.
+
+        Sends a chat message to the OpenAI chat model and retrieves the generated response.
+
+        Args:
+            messages (list[ChatMessage]): The chat message objects containing the role and content.
+            max_tokens (int, optional): The maximum number of tokens to generate.
+                Defaults to 1024.
+            temperature (float, optional): Controls randomness in the response generation.
+                Defaults to 1.0.
+            top_p (float, optional): Probability mass for nucleus sampling (an alternative to
+                temperature). Tokens are sampled from the rescaled output probability distribution
+                whose support is the smallest set of tokens whose cumulative probability mass exceeds
+                top_p. So, with top_p = 0.1 only the top 10% of the tokens will be considered.
+                This technique helps increase output diversity and fluency.
+                It is recommended to set top_p or temperature, but not both.
+                Defaults to 1.0.
+            frequency_penalty (float, optional): Controls the frequency of generating the same lines of text.
+                Defaults to 0.5.
+            presence_penalty (float, optional): Controls the likelihood to talk about new topics.
+                Defaults to 0.5.
+
+        Returns:
+            str: The generated response message.
+        """
+
+        response=self._async_client.generate(
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            n=1,
+            stream=False,
+            messages=[{"role": msg.role, "content": msg.content} for msg in messages],
+        )
+		
+	return response
+
+    def _validate_request(self, *, prompt_request: PromptRequestResponse) -> None:
+        if len(prompt_request.request_pieces) != 1:
+            raise ValueError("This target only supports a single prompt request piece.")
+
+        if prompt_request.request_pieces[0].converted_value_data_type != "text":
+            raise ValueError("This target only supports text prompt input.")
+		
