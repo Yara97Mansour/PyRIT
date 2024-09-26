@@ -5,11 +5,11 @@ import json
 import logging
 from typing import Optional, Union, List, Dict, Iterable
 
+from openai._types import Headers
 from unify import Unify, AsyncUnify, MultiLLM, MultiLLMAsync
 
 from pyrit.common import default_values
-# from pyrit.exceptions import EmptyResponseException, PyritException
-from pyrit.exceptions import pyrit_target_retry # , handle_bad_request_exception
+from pyrit.exceptions import pyrit_target_retry
 from pyrit.memory import MemoryInterface
 from pyrit.models import ChatMessage, PromptRequestPiece, PromptRequestResponse
 from pyrit.models import construct_response_from_request
@@ -29,11 +29,11 @@ class UnifyChatTarget(PromptChatTarget):
     _async_client: AsyncUnify
     _Multi_client: MultiLLM
     _Multi_async_client: MultiLLMAsync
-	
+
     API_KEY_ENVIRONMENT_VARIABLE: str = "UNIFY_CHAT_KEY"
     DEPLOYMENT_ENVIRONMENT_VARIABLE: str = "UNIFY_CHAT_DEPLOYMENT"
 
-	
+
     def __init__(
         self,
         *,
@@ -45,7 +45,7 @@ class UnifyChatTarget(PromptChatTarget):
         top_p: float = 1.0,
         frequency_penalty: float = 0.5,
         presence_penalty: float = 0.5,
-        headers: Optional[Dict[str, str]] = None,
+        headers: Optional[Headers] = None,
         max_requests_per_minute: Optional[int] = None,
     ) -> None:
         """
@@ -88,23 +88,13 @@ class UnifyChatTarget(PromptChatTarget):
         )
         self._client = Unify(
             endpoint=self._deployment_name,
-	    api_key=api_key,
-            extra_headers=json.loads(str(headers)),
+            api_key=api_key,
+            extra_headers=headers,
         )
         self._async_client = AsyncUnify(
             endpoint=self._deployment_name,
             api_key=api_key,
-            extra_headers=json.loads(str(headers)),
-        )
-        self._Multi_client = MultiLLM(
-            endpoints=self._deployment_name,
-            api_key=api_key,
-            extra_headers=json.loads(str(headers)),
-        )
-        self._Multi_async_client = MultiLLMAsync(
-            endpoints=self._deployment_name,
-            api_key=api_key,
-            extra_headers=json.loads(str(headers)),
+            extra_headers=headers,
         )
 
 
@@ -117,7 +107,7 @@ class UnifyChatTarget(PromptChatTarget):
         messages.append(request.to_chat_message())
 
         logger.info(f"Sending the following prompt to the prompt target: {request}")
-		
+
         resp_text = await self._complete_chat_async(messages=messages)
 
         if not resp_text:
@@ -165,7 +155,7 @@ class UnifyChatTarget(PromptChatTarget):
             str: The generated response message.
         """
 
-        response=self._async_client.generate(
+        response= await self._async_client.generate(
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
@@ -175,7 +165,7 @@ class UnifyChatTarget(PromptChatTarget):
             stream=False,
             messages=[{"role": msg.role, "content": msg.content} for msg in messages],
         )
-		
+
         return response
 
     def _validate_request(self, *, prompt_request: PromptRequestResponse) -> None:
@@ -184,4 +174,3 @@ class UnifyChatTarget(PromptChatTarget):
 
         if prompt_request.request_pieces[0].converted_value_data_type != "text":
             raise ValueError("This target only supports text prompt input.")
-		
